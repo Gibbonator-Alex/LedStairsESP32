@@ -13,7 +13,6 @@ int lightIntensityToActivateLED = 50;
 Adafruit_NeoPixel ws2812b(NUM_PIXELS, PIN_WS2812B, NEO_GRB + NEO_KHZ800);
 
 void setup() {
-  Serial.begin(115200);
   ws2812b.begin();
   ws2812b.setBrightness(80);
 
@@ -31,9 +30,6 @@ void loop() {
   int lightIntensityPercentage = map(photoValue, 4095, 0, 0, 100);
 
   if(pinStatePrevious == LOW && pinStateCurrent == HIGH) {
-    Serial.println("Motion detected");
-    Serial.print("Light intensity: ");
-    Serial.println(lightIntensityPercentage);
     if (lightIntensityPercentage < lightIntensityToActivateLED) {
       for(int pixel = 0; pixel < NUM_PIXELS; pixel++){
         ws2812b.setPixelColor(pixel, ws2812b.Color(184, 12, 207));
