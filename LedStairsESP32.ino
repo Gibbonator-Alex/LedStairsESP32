@@ -19,7 +19,7 @@ struct color{
   int b;
 };
 
-const int NUM_PIXELS = 300;
+const int NUM_PIXELS = 182;
 const int CONNECT_TIMEOUT = 5000;
 const color LED_COLOR_OFF{0, 0, 0};
 
