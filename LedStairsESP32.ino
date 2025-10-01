@@ -28,7 +28,7 @@ const color LED_COLOR_OFF{0, 0, 0};
 // ========================
 int pinStateCurrent = LOW;
 int pinStatePrevious = LOW;
-int LIGHT_INTENSITY_TO_ACTIVATE_LED = 30;
+int LIGHT_INTENSITY_TO_ACTIVATE_LED = 20;
 int DELAY_BETWEEN_PIXEL_ACTIVATION = 5;
 int LED_ON_DURATION = 30000; // seconds
 
@@ -134,10 +134,26 @@ void ensureMqttConnected(){
   }
 }
 
-bool isMotionDetected(){
+bool isMotionDetected() {
+  static unsigned long motionStart = 0;
+  static bool waitingForValidation = false;
+
   pinStatePrevious = pinStateCurrent;
   pinStateCurrent = digitalRead(PIN_HCSR501);
-  return (pinStatePrevious == LOW && pinStateCurrent == HIGH);
+
+  if (pinStatePrevious == LOW && pinStateCurrent == HIGH) {
+    motionStart = millis();
+    waitingForValidation = true;
+  }
+
+  if (waitingForValidation && (millis() - motionStart >= 1500)) {
+    waitingForValidation = false;
+    if (digitalRead(PIN_HCSR501) == HIGH) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 bool checkLightIntensity(){
