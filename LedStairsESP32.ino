@@ -31,6 +31,7 @@ int pinStatePrevious = LOW;
 int LIGHT_INTENSITY_TO_ACTIVATE_LED = 20;
 int DELAY_BETWEEN_PIXEL_ACTIVATION = 5;
 int LED_ON_DURATION = 30000; // seconds
+bool LED_ENABLED = true;
 
 color LED_COLOR_ON{184, 12, 207};
 
@@ -81,7 +82,7 @@ void loop() {
 
   client.loop();
   
-  if(isMotionDetected() && checkLightIntensity()){
+  if(LED_ENABLED && isMotionDetected() && checkLightIntensity()){
     led(0, NUM_PIXELS, LED_COLOR_ON);
 
     // Keep LEDs on for LED_ON_DURATION, allowing MQTT callbacks to run
@@ -206,6 +207,13 @@ void mqttCallback(char *topic, byte *payload, unsigned int length) {
     } 
     else if(strcmp(topic, TOPIC_LED_ON_DURATION) == 0) {
       LED_ON_DURATION = val;
+    }
+    else if(strcmp(topic, TOPIC_LED_ENABLED) == 0) {
+      if(val == 1){
+        LED_ENABLED = true;
+      } else if(val == 0){
+        LED_ENABLED = false;
+      }
     }
   }
 }
