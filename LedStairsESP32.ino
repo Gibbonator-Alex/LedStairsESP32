@@ -28,10 +28,11 @@ const color LED_COLOR_OFF{0, 0, 0};
 // ========================
 int pinStateCurrent = LOW;
 int pinStatePrevious = LOW;
-int LIGHT_INTENSITY_TO_ACTIVATE_LED = 20;
+int LIGHT_INTENSITY_TO_ACTIVATE_LED = 10;
 int DELAY_BETWEEN_PIXEL_ACTIVATION = 5;
-int LED_ON_DURATION = 30000; // seconds
+int LED_ON_DURATION = 30000; // ms
 bool LED_ENABLED = true;
+int MOTION_VALIDATION_DELAY_MS = 800; // ms
 
 color LED_COLOR_ON{184, 12, 207};
 
@@ -89,6 +90,9 @@ void loop() {
     unsigned long startTime = millis();
     while(millis() - startTime < LED_ON_DURATION) {
       client.loop();
+
+      if(isMotionDetected())
+        startTime = millis();
     }
     
     led(NUM_PIXELS, 0, LED_COLOR_OFF);
@@ -147,7 +151,7 @@ bool isMotionDetected() {
     waitingForValidation = true;
   }
 
-  if (waitingForValidation && (millis() - motionStart >= 1500)) {
+  if (waitingForValidation && (millis() - motionStart >= MOTION_VALIDATION_DELAY_MS)) {
     waitingForValidation = false;
     if (digitalRead(PIN_HCSR501) == HIGH) {
       return true;
