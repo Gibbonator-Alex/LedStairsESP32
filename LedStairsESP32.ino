@@ -1,6 +1,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <WiFi.h>
 #include <PubSubClient.h>
+#include <ArduinoJson.h>
 #include "secrets.h"
 
 // ========================
@@ -20,6 +21,9 @@ struct color{
 };
 const int NUM_PIXELS = 182;
 const color LED_COLOR_OFF{0, 0, 0};
+const char* ntpServer = "pool.ntp.org";
+const long  gmtOffsetSec = 3600;
+const int   daylightOffsetSec = 3600;
 
 // ========================
 // GLOBALES
@@ -88,7 +92,7 @@ void setup() {
   mqttCommandQueue = xQueueCreate(100, sizeof(MqttCommand));
   
   xTaskCreatePinnedToCore(
-    connectWifiMqttClient,
+    wifiMqttClientTaskWorker,
     "WifiMqttClientConnectorTask",
     10000,
     NULL,
@@ -123,8 +127,11 @@ void loop() {
 // ========================
 // WIFI MQTTCLIENT TASK
 // ========================
-void connectWifiMqttClient( void *parameter )
+void wifiMqttClientTaskWorker( void *parameter )
 {
+  struct tm timeinfo;
+  configTime(gmtOffsetSec, daylightOffsetSec, ntpServer);
+  
   client.setServer(mqtt_broker, mqtt_port);
   client.setCallback(mqttCallback);
   
@@ -132,6 +139,14 @@ void connectWifiMqttClient( void *parameter )
     if( WiFi.status() != WL_CONNECTED)
     {
       WiFi.begin(ssid, password);
+
+      while(WiFi.status() != WL_CONNECTED) {
+        delay(250);
+      }
+    }
+    else
+    {
+      getLocalTime(&timeinfo);
     }
 
     if( !client.connected() )
@@ -140,8 +155,8 @@ void connectWifiMqttClient( void *parameter )
       client.connect(clientId.c_str());
 
       if(client.connected()){
-        for(int i = 0; i < NUM_TOPICS; i++){
-          client.subscribe(TOPICS[i]);
+        for(int i = 0; i < NUM_SUB_TOPICS; i++){
+          client.subscribe(SUB_TOPICS[i]);
         }
       }
     }
@@ -162,7 +177,7 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
   MqttCommand cmd;
 
   // ===== LED COLOR =====
-  if (strcmp(topic, TOPIC_LED_COLOR) == 0) {
+  if (strcmp(topic, SUB_TOPIC_LED_COLOR) == 0) {
     int r, g, b;
     if (sscanf(msg, "[%d,%d,%d]", &r, &g, &b) == 3) {
       cmd.type = MqttCommandType::SET_LED_COLOR;
@@ -174,22 +189,65 @@ void mqttCallback(char *topic, byte *payload, unsigned int length)
     }
   }
   // ===== INT TOPICS =====
-  else {
-    if (!isValidInt(msg, length)) return;
-
+  else if (isValidInt(msg, length)) {
     int val = atoi(msg);
     cmd.intValue = val;
 
-    if (strcmp(topic, TOPIC_LIGHT_INTENSITY) == 0)
+    if (strcmp(topic, SUB_TOPIC_LIGHT_INTENSITY) == 0)
       cmd.type = MqttCommandType::SET_LIGHT_INTENSITY;
-    else if (strcmp(topic, TOPIC_DELAY_BETWEEN_PIX) == 0)
+    else if (strcmp(topic, SUB_TOPIC_DELAY_BETWEEN_PIX) == 0)
       cmd.type = MqttCommandType::SET_DELAY_BETWEEN_PIXEL;
-    else if (strcmp(topic, TOPIC_LED_ON_DURATION) == 0)
+    else if (strcmp(topic, SUB_TOPIC_LED_ON_DURATION) == 0)
       cmd.type = MqttCommandType::SET_LED_ON_DURATION;
-    else if (strcmp(topic, TOPIC_LED_ENABLED) == 0)
+    else if (strcmp(topic, SUB_TOPIC_LED_ENABLED) == 0)
       cmd.type = MqttCommandType::SET_LED_ENABLED;
     else
       return;
+  }
+  // ===== STATE TOPIC =====
+  else if (strcmp(topic, SUB_TOPIC_LED_STATE_REQUEST) == 0) {
+    if(!client.connected()) return;
+
+    StaticJsonDocument<64> doc;
+    char buffer[64];
+    
+    {
+      StaticJsonDocument<64> doc;
+      doc["lightIntensity"] = LIGHT_INTENSITY_TO_ACTIVATE_LED;
+      size_t n = serializeJson(doc, buffer);
+      client.publish(PUB_TOPIC_LIGHT_INTENSITY, buffer, n);
+    }
+
+    {
+      StaticJsonDocument<64> doc;
+      doc["delayBetweenPixel"] = DELAY_BETWEEN_PIXEL_ACTIVATION;
+      size_t n = serializeJson(doc, buffer);
+      client.publish(PUB_TOPIC_DELAY_BETWEEN_PIX, buffer, n);
+    }
+
+    {
+      StaticJsonDocument<64> doc;
+      doc["ledOnDuration"] = LED_ON_DURATION;
+      size_t n = serializeJson(doc, buffer);
+      client.publish(PUB_TOPIC_LED_ON_DURATION, buffer, n);
+    }
+
+    {
+      StaticJsonDocument<64> doc;
+      doc["ledEnabled"] = LED_ENABLED;
+      size_t n = serializeJson(doc, buffer);
+      client.publish(PUB_TOPIC_LED_ENABLED, buffer, n);
+    }
+
+    {
+      StaticJsonDocument<64> doc;
+      JsonArray color = doc.createNestedArray("ledColor");
+      color.add(LED_COLOR_ON.r);
+      color.add(LED_COLOR_ON.g);
+      color.add(LED_COLOR_ON.b);
+      size_t n = serializeJson(doc, buffer);
+      client.publish(PUB_TOPIC_LED_COLOR, buffer, n);
+    }
   }
 
   xQueueSend(mqttCommandQueue, &cmd, 0);
