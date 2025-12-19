@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
+#include <time.h>
 #include "secrets.h"
 
 // ========================
@@ -37,6 +38,8 @@ int MOTION_VALIDATION_DELAY_MS = 800; // ms
 bool LED_ENABLED = true;
 color LED_COLOR_ON{184, 12, 207};
 Adafruit_NeoPixel ws2812b(NUM_PIXELS, PIN_WS2812B, NEO_GRB + NEO_KHZ800);
+unsigned long lastStatusMillis = 0;
+const int STATUS_INTERVAL = 1800000;
 
 // ========================
 // WiFi & MQTT
@@ -144,10 +147,6 @@ void wifiMqttClientTaskWorker( void *parameter )
         delay(250);
       }
     }
-    else
-    {
-      getLocalTime(&timeinfo);
-    }
 
     if( !client.connected() )
     {
@@ -158,11 +157,19 @@ void wifiMqttClientTaskWorker( void *parameter )
         for(int i = 0; i < NUM_SUB_TOPICS; i++){
           client.subscribe(SUB_TOPICS[i]);
         }
+
+        // GET RETAINED MESSAGES
+        unsigned long start = millis();
+        while (millis() - start < 500) {
+          client.loop();
+          vTaskDelay(10 / portTICK_PERIOD_MS);
+        }
       }
     }
     else
     {
       client.loop();
+      publishStatus();
     }
   }
   vTaskDelete(NULL);
@@ -260,6 +267,42 @@ bool isValidInt(const char *str, int length){
   }
 
   return true;
+}
+
+void publishStatus() {
+  unsigned long nowMillis = millis();
+  if (nowMillis - lastStatusMillis >= STATUS_INTERVAL || lastStatusMillis == 0) {
+    lastStatusMillis = nowMillis;
+
+    struct tm timeinfo;
+    if (!getLocalTime(&timeinfo)) return;
+    
+    time_t currentTime = mktime(&timeinfo);
+    time_t nextUpdateTime = currentTime + ( STATUS_INTERVAL / 1000 );
+
+    struct tm nextTimeinfo;
+    localtime_r(&nextUpdateTime, &nextTimeinfo);
+
+    char dateTime[32];
+    snprintf(dateTime, sizeof(dateTime), "%04d-%02d-%02d %02d:%02d:%02d",
+      nextTimeinfo.tm_year + 1900,
+      nextTimeinfo.tm_mon + 1,
+      nextTimeinfo.tm_mday,
+      nextTimeinfo.tm_hour,
+      nextTimeinfo.tm_min,
+      nextTimeinfo.tm_sec
+    );
+    
+    StaticJsonDocument<128> doc;
+    doc["online"] = true;
+    doc["nextUpdate"] = dateTime;
+
+    char buffer[128];
+    size_t n = serializeJson(doc, buffer);
+
+    if (!client.connected()) return;
+    client.publish(PUB_TOPIC_LED_STATUS, (const uint8_t*)buffer, n, true);
+  }
 }
 
 
